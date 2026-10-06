@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/services/api";
+import { LoginCredentialsManager } from "@/services/storage";
+import { PRESET } from "@/constants/Defaults";
 import { useSettingsStore } from "./settingsStore";
 import Toast from "react-native-toast-message";
 import Logger from "@/utils/Logger";
@@ -59,6 +61,23 @@ const useAuthStore = create<AuthState>((set) => ({
 
       const authToken = await AsyncStorage.getItem('authCookies');
       if (!authToken) {
+        // 出厂预置：先用内建凭据（或上次成功登录保存的凭据）自动登录，省去在电视上敲字
+        const saved = await LoginCredentialsManager.get();
+        const creds = saved ?? (PRESET.username && PRESET.password
+          ? { username: PRESET.username, password: PRESET.password }
+          : null);
+        if (creds && serverConfig && serverConfig.StorageType !== 'localstorage') {
+          try {
+            const result = await api.login(creds.username, creds.password);
+            if (result && result.ok) {
+              await LoginCredentialsManager.save(creds);
+              set({ isLoggedIn: true, isLoginModalVisible: false });
+              return;
+            }
+          } catch (e) {
+            logger.info('预置凭据自动登录未成功，回退到手动登录', e);
+          }
+        }
         if (serverConfig && serverConfig.StorageType === "localstorage") {
           const loginResult = await api.login().catch(() => {
             set({ isLoggedIn: false, isLoginModalVisible: true });
