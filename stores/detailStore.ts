@@ -3,16 +3,56 @@ import { SearchResult, api } from "@/services/api";
 import { getResolutionFromM3U8 } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
+import Toast from "react-native-toast-message";
 import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
-export type SearchResultWithResolution = SearchResult & { resolution?: string | null };
+/** 分辨率优先级：自动选源时作为"耗时相同"的次级参考 */
+const resolutionRank = (res?: string | null): number => {
+  if (!res) return 0;
+  if (res.includes('1080')) return 4;
+  if (res.includes('720')) return 3;
+  if (res.includes('480')) return 2;
+  if (res.includes('360')) return 1;
+  return 0;
+};
+
+/**
+ * 从搜索结果里挑最快的那条线路。
+ * 依据是各源首集 m3u8 的实测加载耗时 speedMs（越小越快）；耗时相同则分辨率高者优先。
+ * 没有任何测速数据时返回 null —— 调用方保持原有选择。
+ */
+export const pickFastestSource = (
+  results: SearchResultWithResolution[]
+): SearchResultWithResolution | null => {
+  const candidates = results.filter(
+    (r) => r.episodes && r.episodes.length > 0 && typeof r.speedMs === 'number'
+  );
+  if (candidates.length === 0) return null;
+  const sorted = [...candidates].sort((a, b) => {
+    const speedDiff = (a.speedMs as number) - (b.speedMs as number);
+    if (speedDiff !== 0) return speedDiff;
+    return resolutionRank(b.resolution) - resolutionRank(a.resolution);
+  });
+  return sorted[0];
+};
+
+export type SearchResultWithResolution = SearchResult & {
+  resolution?: string | null;
+  /** 首集 m3u8 的实测加载耗时（毫秒）；测速失败为 undefined。用于自动选最快线路 */
+  speedMs?: number;
+};
 
 interface DetailState {
   q: string | null;
   searchResults: SearchResultWithResolution[];
-  sources: { source: string; source_name: string; resolution: string | null | undefined }[];
+  sources: {
+    source: string;
+    source_name: string;
+    resolution: string | null | undefined;
+    speedMs?: number;
+  }[];
   detail: SearchResultWithResolution | null;
   loading: boolean;
   error: string | null;
@@ -20,9 +60,11 @@ interface DetailState {
   controller: AbortController | null;
   isFavorited: boolean;
   failedSources: Set<string>; // 记录失败的source列表
+  /** 用户手动点过播放源之后，不再自动切换到"最快"源 */
+  userSelectedSource: boolean;
 
   init: (q: string, preferredSource?: string, id?: string) => Promise<void>;
-  setDetail: (detail: SearchResultWithResolution) => Promise<void>;
+  setDetail: (detail: SearchResultWithResolution, fromAuto?: boolean) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
   markSourceAsFailed: (source: string, reason: string) => void;
@@ -40,6 +82,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
   controller: null,
   isFavorited: false,
   failedSources: new Set(),
+  userSelectedSource: false,
 
   init: async (q, preferredSource, id) => {
     const perfStart = performance.now();
@@ -82,8 +125,10 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           }
           const m3u8End = performance.now();
-          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${resolution || 'failed'})`);
-          return { ...searchResult, resolution };
+          // 这次 fetch 同时也是「测速」：耗时用于自动选择最快线路
+          const speedMs = resolution ? Math.round(m3u8End - m3u8Start) : undefined;
+          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${resolution || 'failed'}) speedMs=${speedMs ?? '-'}`);
+          return { ...searchResult, resolution, speedMs };
         })
       );
       
@@ -103,6 +148,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             source: r.source,
             source_name: r.source_name,
             resolution: r.resolution,
+            speedMs: r.speedMs,
           })),
           detail: state.detail ?? finalResults[0] ?? null,
         };
@@ -307,6 +353,30 @@ const useDetailStore = create<DetailState>((set, get) => ({
       if (!signal.aborted) {
         set({ loading: false, allSourcesLoaded: true });
         logger.info(`[INFO] DetailStore.init cleanup completed`);
+
+        // 自动选择最快线路：所有源搜索/测速完成后，切到耗时最短的那条
+        // （用户已经手动点过播放源时不再干预）
+        try {
+          const { autoFastestSource } = useSettingsStore.getState();
+          const state = get();
+          if (autoFastestSource && !state.userSelectedSource && state.searchResults.length > 1) {
+            const fastest = pickFastestSource(state.searchResults);
+            if (fastest && fastest.source !== state.detail?.source) {
+              logger.info(
+                `[AUTO_SOURCE] 自动切换到最快线路: ${fastest.source_name} (${fastest.speedMs}ms)` +
+                  `，原线路 ${state.detail?.source_name ?? '无'} (${state.detail?.speedMs ?? '-'}ms)`
+              );
+              await get().setDetail(fastest, true);
+              Toast.show({
+                type: 'info',
+                text1: '已自动选择最快线路',
+                text2: `${fastest.source_name} · ${fastest.speedMs}ms`,
+              });
+            }
+          }
+        } catch (autoErr) {
+          logger.warn('[AUTO_SOURCE] 自动选源失败，保持原有播放源', autoErr);
+        }
       }
       
       const perfEnd = performance.now();
@@ -314,8 +384,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
     }
   },
 
-  setDetail: async (detail) => {
-    set({ detail });
+  setDetail: async (detail, fromAuto = false) => {
+    // 用户手动点过源之后不再被"自动选最快"覆盖；自动切换不算用户意图
+    set({ detail, userSelectedSource: fromAuto ? get().userSelectedSource : true });
     const { source, id } = detail;
     const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
     set({ isFavorited });
@@ -379,21 +450,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
       return null;
     }
     
-    // 优先选择有高分辨率的source
+    // 回退时优先选实测最快、其次分辨率更高的源
     const sortedSources = availableSources.sort((a, b) => {
-      const aResolution = a.resolution || '';
-      const bResolution = b.resolution || '';
-      
-      // 优先级: 1080p > 720p > 其他 > 无分辨率
-      const resolutionPriority = (res: string) => {
-        if (res.includes('1080')) return 4;
-        if (res.includes('720')) return 3;
-        if (res.includes('480')) return 2;
-        if (res.includes('360')) return 1;
-        return 0;
-      };
-      
-      return resolutionPriority(bResolution) - resolutionPriority(aResolution);
+      const aSpeed = typeof a.speedMs === 'number' ? a.speedMs : Number.MAX_SAFE_INTEGER;
+      const bSpeed = typeof b.speedMs === 'number' ? b.speedMs : Number.MAX_SAFE_INTEGER;
+      if (aSpeed !== bSpeed) return aSpeed - bSpeed;
+      return resolutionRank(b.resolution) - resolutionRank(a.resolution);
     });
     
     const selectedSource = sortedSources[0];

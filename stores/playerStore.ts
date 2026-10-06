@@ -4,6 +4,8 @@ import { AVPlaybackStatus, Video } from "expo-av";
 import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { proxifyEpisodes } from "@/utils/adFilter";
 import Logger from '@/utils/Logger';
 
 const logger = Logger.withTag('PlayerStore');
@@ -208,7 +210,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const savedPlaybackRate = playerSettings?.playbackRate || 1.0;
       
       const episodesMappingStart = performance.now();
-      const mappedEpisodes = episodes.map((ep, index) => ({
+      // 去广告：把播放地址改写成走自建站的 m3u8 代理（服务端过滤 #EXT-X-DISCONTINUITY 与广告分片）
+      const adFilterEnabled = useSettingsStore.getState().adFilterEnabled !== false;
+      const playbackEpisodes = proxifyEpisodes(episodes, detail.source, adFilterEnabled) || episodes;
+      const mappedEpisodes = playbackEpisodes.map((ep, index) => ({
         url: ep,
         title: `第 ${index + 1} 集`,
       }));
@@ -511,7 +516,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // 重新加载当前集数的episodes
       const newEpisodes = fallbackSource.episodes || [];
       if (newEpisodes.length > currentEpisodeIndex) {
-        const mappedEpisodes = newEpisodes.map((ep, index) => ({
+        const adFilterEnabled = useSettingsStore.getState().adFilterEnabled !== false;
+        const proxiedEpisodes =
+          proxifyEpisodes(newEpisodes, fallbackSource.source, adFilterEnabled) || newEpisodes;
+        const mappedEpisodes = proxiedEpisodes.map((ep, index) => ({
           url: ep,
           title: `第 ${index + 1} 集`,
         }));

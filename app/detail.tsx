@@ -167,6 +167,11 @@ export default function DetailScreen() {
                         <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                       </View>
                     )}
+                    {item.speedMs !== undefined && (
+                      <View style={[dynamicStyles.badge, { backgroundColor: "#2e7d32" }, isSelected && dynamicStyles.selectedBadge]}>
+                        <Text style={dynamicStyles.badgeText}>{item.speedMs}ms</Text>
+                      </View>
+                    )}
                   </StyledButton>
                 );
               })}
@@ -248,6 +253,11 @@ export default function DetailScreen() {
                       {item.resolution && (
                         <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
                           <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                        </View>
+                      )}
+                      {item.speedMs !== undefined && (
+                        <View style={[dynamicStyles.badge, { backgroundColor: "#2e7d32" }, isSelected && dynamicStyles.selectedBadge]}>
+                          <Text style={dynamicStyles.badgeText}>{item.speedMs}ms</Text>
                         </View>
                       )}
                     </StyledButton>

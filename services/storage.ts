@@ -39,6 +39,10 @@ export interface AppSettings {
     };
   };
   m3uUrl: string;
+  /** 去广告：播放地址走自建站的 m3u8 代理，服务端过滤广告分片（默认开） */
+  adFilterEnabled?: boolean;
+  /** 自动选择最快线路：搜索后按测速结果自动切到最快的资源站（默认开） */
+  autoFastestSource?: boolean;
 }
 
 export interface LoginCredentials {
@@ -322,6 +326,8 @@ export class SettingsManager {
         sources: {},
       },
       m3uUrl: "",
+      adFilterEnabled: true,
+      autoFastestSource: true,
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

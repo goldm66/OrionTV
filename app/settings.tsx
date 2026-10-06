@@ -10,6 +10,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 // import useAuthStore from "@/stores/authStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
+import { PlaybackSection } from "@/components/settings/PlaybackSection";
 import { LiveStreamSection } from "@/components/settings/LiveStreamSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
@@ -185,13 +186,25 @@ export default function SettingsScreen() {
       ),
       key: "api",
     },
+    {
+      component: (
+        <PlaybackSection
+          onChanged={markAsChanged}
+          onFocus={() => {
+            setCurrentFocusIndex(2);
+            setCurrentSection("playback");
+          }}
+        />
+      ),
+      key: "playback",
+    },
     deviceType !== "mobile" && {
       component: (
         <LiveStreamSection
           ref={liveStreamSectionRef}
           onChanged={markAsChanged}
           onFocus={() => {
-            setCurrentFocusIndex(2);
+            setCurrentFocusIndex(3);
             setCurrentSection("livestream");
           }}
         />
