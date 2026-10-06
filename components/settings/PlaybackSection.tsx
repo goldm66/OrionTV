@@ -114,7 +114,7 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
       {renderItem(
         "ad",
         "自动去广告",
-        "播放地址走站点的 m3u8 代理，服务端剔除广告分片与插入点",
+        "在本机从播放清单里剔除广告段落（源站仍直连，不经过服务器）",
         !!adFilterEnabled,
         toggleAd
       )}

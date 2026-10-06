@@ -9,6 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
+import localAdProxy from "@/services/localAdProxy";
 import LoginModal from "@/components/LoginModal";
 import useAuthStore from "@/stores/authStore";
 import { useUpdateStore, initUpdateStore } from "@/stores/updateStore";
@@ -36,6 +37,8 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       await loadSettings();
+      // 启动本地去广告代理（播放 m3u8 走它过滤广告；启动失败会自动回退为直连播放）
+      await localAdProxy.start();
     };
     initializeApp();
     initUpdateStore(); // 初始化更新存储
