@@ -36,7 +36,8 @@ export default function DetailScreen() {
 
   useEffect(() => {
     if (q) {
-      init(q, source, id);
+      // 只有详情页允许"自动选最快线路"；播放页传 false，避免播放中途换源把播放打断
+      init(q, source, id, true);
     }
     return () => {
       abort();

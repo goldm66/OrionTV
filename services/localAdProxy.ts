@@ -27,13 +27,39 @@ const UA =
 // 与服务端 filterAdsFromM3U8Default 保持一致
 const AD_KEYWORDS = ['sponsor', '/ad/', '/ads/', 'advert', 'advertisement', '/adjump', 'redtraffic'];
 
+/** 手写 query 解析：不依赖 URLSearchParams（RN/Hermes 上支持不完整，曾导致代理不可用） */
+function parseQuery(query: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of query.split('&')) {
+    if (!pair) continue;
+    const i = pair.indexOf('=');
+    const key = i < 0 ? pair : pair.slice(0, i);
+    const val = i < 0 ? '' : pair.slice(i + 1);
+    try {
+      out[decodeURIComponent(key)] = decodeURIComponent(val);
+    } catch {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+/** 取 URL 的 origin（用于 Referer），手写正则避免依赖 URL 实现 */
+function originOf(u: string): string {
+  const m = /^(https?):\/\/([^/?#]+)/i.exec(u);
+  return m ? `${m[1]}://${m[2]}/` : '';
+}
+
+/** 相对路径转绝对路径（同样不依赖 new URL） */
 function absolutize(url: string, baseUrl: string): string {
   if (/^https?:\/\//i.test(url)) return url;
-  try {
-    return new URL(url, baseUrl).toString();
-  } catch {
-    return url;
-  }
+  const m = /^(https?):\/\/([^/?#]+)(\/[^?#]*)?/i.exec(baseUrl);
+  if (!m) return url;
+  const origin = `${m[1]}://${m[2]}`;
+  if (url.startsWith('//')) return `${m[1]}:${url}`;
+  if (url.startsWith('/')) return origin + url;
+  const baseDir = (m[3] || '/').replace(/[^/]*$/, '');
+  return origin + baseDir + url;
 }
 
 /** 过滤广告 + 把链接绝对化（子 m3u8 继续走本地代理） */
@@ -110,6 +136,8 @@ class LocalAdProxy {
           resolve(ok);
         }
       };
+      // 兜底：5 秒内没起来就当失败，绝不阻塞 App 启动流程
+      setTimeout(() => done(false), 5000);
 
       try {
         const server = TcpSocket.createServer((socket: any) => {
@@ -184,32 +212,32 @@ class LocalAdProxy {
       return this.raw(404, 'not found');
     }
 
-    const params = new URLSearchParams(path.slice(qi + 1));
-    const target = params.get('url') || '';
-    const source = params.get('source') || '';
+    const params = parseQuery(path.slice(qi + 1));
+    const target = params.url || '';
+    const source = params.source || '';
     if (!/^https?:\/\//i.test(target)) {
       return this.raw(400, 'bad url');
     }
 
     let text = '';
     try {
-      const u = new URL(target);
       const resp = await fetch(target, {
         headers: {
           'User-Agent': UA,
           Accept: '*/*',
           'Accept-Language': 'zh-CN,zh;q=0.9',
-          Referer: `${u.protocol}//${u.host}/`,
+          Referer: originOf(target),
         },
       });
       if (!resp.ok) {
-        logger.info(`[LocalAdProxy] 上游 ${resp.status}: ${target.slice(0, 90)}`);
-        return this.raw(resp.status, `upstream ${resp.status}`);
+        logger.info(`[LocalAdProxy] 上游 ${resp.status}，回退直连: ${target.slice(0, 90)}`);
+        // 关键兜底：拉不到就 302 回原地址，让播放器自己直连源站（最坏也只是没去广告，绝不能播不了）
+        return `HTTP/1.1 302 Found\r\nLocation: ${target}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`;
       }
       text = await resp.text();
     } catch (err) {
-      logger.info('[LocalAdProxy] 拉取 m3u8 失败:', err);
-      return this.raw(502, 'upstream error');
+      logger.info('[LocalAdProxy] 拉取 m3u8 失败，回退直连:', err);
+      return `HTTP/1.1 302 Found\r\nLocation: ${target}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`;
     }
 
     const processed = processPlaylist(text, target, source, this.getBaseUrl());

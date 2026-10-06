@@ -63,7 +63,7 @@ interface DetailState {
   /** 用户手动点过播放源之后，不再自动切换到"最快"源 */
   userSelectedSource: boolean;
 
-  init: (q: string, preferredSource?: string, id?: string) => Promise<void>;
+  init: (q: string, preferredSource?: string, id?: string, allowAutoSelect?: boolean) => Promise<void>;
   setDetail: (detail: SearchResultWithResolution, fromAuto?: boolean) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
@@ -84,7 +84,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
   failedSources: new Set(),
   userSelectedSource: false,
 
-  init: async (q, preferredSource, id) => {
+  init: async (q, preferredSource, id, allowAutoSelect = false) => {
     const perfStart = performance.now();
     logger.info(`[PERF] DetailStore.init START - q: ${q}, preferredSource: ${preferredSource}, id: ${id}`);
     
@@ -359,7 +359,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
         try {
           const { autoFastestSource } = useSettingsStore.getState();
           const state = get();
-          if (autoFastestSource && !state.userSelectedSource && state.searchResults.length > 1) {
+          if (allowAutoSelect && autoFastestSource && !state.userSelectedSource && state.searchResults.length > 1) {
             const fastest = pickFastestSource(state.searchResults);
             if (fastest && fastest.source !== state.detail?.source) {
               logger.info(
