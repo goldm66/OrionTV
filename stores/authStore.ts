@@ -61,14 +61,18 @@ const useAuthStore = create<AuthState>((set) => ({
 
       const authToken = await AsyncStorage.getItem('authCookies');
       if (!authToken) {
-        // 出厂预置：先用内建凭据（或上次成功登录保存的凭据）自动登录，省去在电视上敲字
+        // 出厂预置：先用内建凭据（或上次成功登录保存的凭据）自动登录，省去在电视上敲字。
+        // 注意 localstorage 模式的站点只校验密码、不校验用户名（服务端固定用默认用户名），
+        // 所以这种模式下用户名传 undefined。
         const saved = await LoginCredentialsManager.get();
-        const creds = saved ?? (PRESET.username && PRESET.password
-          ? { username: PRESET.username, password: PRESET.password }
-          : null);
-        if (creds && serverConfig && serverConfig.StorageType !== 'localstorage') {
+        const isLocalStorage = serverConfig?.StorageType === 'localstorage';
+        const presetCreds = PRESET.password
+          ? { username: isLocalStorage ? '' : PRESET.username, password: PRESET.password }
+          : null;
+        const creds = saved ?? presetCreds;
+        if (creds && creds.password && serverConfig) {
           try {
-            const result = await api.login(creds.username, creds.password);
+            const result = await api.login(isLocalStorage ? undefined : creds.username, creds.password);
             if (result && result.ok) {
               await LoginCredentialsManager.save(creds);
               set({ isLoggedIn: true, isLoginModalVisible: false });

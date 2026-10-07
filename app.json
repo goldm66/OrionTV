@@ -36,7 +36,7 @@
     },
     "name": "OrionTV+",
     "slug": "OrionTV",
-    "version": "1.3.13-mtv6",
+    "version": "1.3.13-mtv7",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
@@ -45,7 +45,7 @@
     ],
     "android": {
       "package": "com.oriontv",
-      "versionCode": 7,
+      "versionCode": 8,
       "usesCleartextTraffic": true,
       "hardwareAcceleration": true,
       "networkSecurityConfig": "@xml/network_security_config",
