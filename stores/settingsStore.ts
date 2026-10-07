@@ -47,8 +47,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     enabledAll: true,
     sources: {},
   },
-  adFilterEnabled: true,
-  autoFastestSource: true,
+  adFilterEnabled: false,
+  autoFastestSource: false,
   loadSettings: async () => {
     const settings = await SettingsManager.get();
     set({
@@ -59,8 +59,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         enabledAll: true,
         sources: {},
       },
-      adFilterEnabled: settings.adFilterEnabled ?? true,
-      autoFastestSource: settings.autoFastestSource ?? true,
+      adFilterEnabled: settings.adFilterEnabled ?? false,
+      autoFastestSource: settings.autoFastestSource ?? false,
     });
     if (settings.apiBaseUrl) {
       api.setBaseUrl(settings.apiBaseUrl);

@@ -327,8 +327,10 @@ export class SettingsManager {
         sources: {},
       },
       m3uUrl: "",
-      adFilterEnabled: true,
-      autoFastestSource: true,
+      // 出厂默认关：这两个增强在部分电视/网络环境下会导致播放异常（能拖进度但画面不动、
+      // 或资源不可用）。默认行为与官方原版一致 = 稳定能播，想要的人在设置里自行打开。
+      adFilterEnabled: false,
+      autoFastestSource: false,
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

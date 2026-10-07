@@ -43,6 +43,18 @@ export const useVideoHandlers = ({
       
       usePlayerStore.setState({ isLoading: false });
       console.info(`[PERF] Video loading complete - isLoading set to false`);
+
+      // 兜底：个别设备/片源上首次 playAsync 不生效，表现为"能拖进度但画面不动"。
+      // 只在"位置还停在开头"时补两次，避免干扰用户主动暂停。
+      [3000, 8000].forEach((delay) => {
+        setTimeout(() => {
+          const st = usePlayerStore.getState().status;
+          if (st && 'isLoaded' in st && st.isLoaded && !st.isPlaying && st.positionMillis < 1500) {
+            console.info(`[AUTOPLAY] Retry playback after ${delay}ms (still paused at ${st.positionMillis}ms)`);
+            videoRef.current?.playAsync().catch(() => {});
+          }
+        }, delay);
+      });
     } catch (error) {
       console.warn(`[AUTOPLAY] Failed to auto-play after onLoad:`, error);
       // 即使自动播放失败，也要设置加载完成状态
