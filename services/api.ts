@@ -93,7 +93,27 @@ export class API {
       throw new Error("API_URL_NOT_SET");
     }
 
-    const response = await fetch(`${this.baseURL}${url}`, options);
+    // RN 的 fetch 默认没有超时：网络一卡住（既不返回也不报错）界面就会一直"正在验证服务器配置"。
+    // 这里统一加 25 秒超时，超时后抛出可读错误，让界面走到失败分支而不是无限转圈。
+    const controller = new AbortController();
+    const timeoutMs = 25000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const externalSignal = options.signal;
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort();
+      else externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseURL}${url}`, { ...options, signal: controller.signal });
+    } catch (err) {
+      const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      if (controller.signal.aborted) throw new Error("timeout");
+      throw new Error(msg);
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (response.status === 401) {
       throw new Error("UNAUTHORIZED");
